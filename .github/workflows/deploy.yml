@@ -1,0 +1,41 @@
+name: Daily AI News Deploy
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # daily at 00:00 UTC (8:00 AM Beijing)
+  push:
+    branches: [master]
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI News fetcher
+        run: python ai_news.py --products --output-dir _site
+
+      - uses: actions/configure-pages@v4
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
