@@ -29,7 +29,9 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run AI News fetcher
-        run: python ai_news.py --products --output-dir _site
+        run: python ai_news.py --products --trending --output-dir _site
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - uses: actions/configure-pages@v4
 

@@ -12,6 +12,7 @@ from sources import ALL_SOURCES
 from fetcher import fetch_all
 from unified_generator import generate_unified_page
 from product_fetcher import fetch_products
+from trending_fetcher import fetch_all_trending
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_once(output_dir="output", max_age_hours=48, fetch_products_flag=False):
+def run_once(output_dir="output", max_age_hours=48, fetch_products_flag=False, fetch_trending_flag=False):
     """Fetch news and generate the HTML page once."""
     logger.info("Starting AI News fetch (%d sources)...", len(ALL_SOURCES))
     articles = fetch_all(ALL_SOURCES, max_age_hours=max_age_hours)
@@ -47,21 +48,30 @@ def run_once(output_dir="output", max_age_hours=48, fetch_products_flag=False):
             logger.info("%d products across %d companies",
                         len(products), len(set(p["company"] for p in products)))
 
-    path = generate_unified_page(articles, products, output_dir=output_dir)
+    trending = {}
+    if fetch_trending_flag:
+        logger.info("Fetching trending GitHub repos, MCPs, and skills...")
+        trending = fetch_all_trending()
+        logger.info("Trending: %d repos, %d MCPs, %d skills",
+                    len(trending.get("trending", [])),
+                    len(trending.get("mcp", [])),
+                    len(trending.get("skills", [])))
+
+    path = generate_unified_page(articles, products, trending, output_dir=output_dir)
     logger.info("Dashboard saved to %s", path)
     return path
 
 
-def run_daemon(output_dir="output", fetch_time="07:00", max_age_hours=48, fetch_products_flag=False):
+def run_daemon(output_dir="output", fetch_time="07:00", max_age_hours=48, fetch_products_flag=False, fetch_trending_flag=False):
     """Run as a background daemon, fetching at the specified time each day."""
     import schedule
 
     logger.info("Daemon mode: will fetch daily at %s", fetch_time)
 
     schedule.every().day.at(fetch_time).do(
-        lambda: run_once(output_dir, max_age_hours, fetch_products_flag)
+        lambda: run_once(output_dir, max_age_hours, fetch_products_flag, fetch_trending_flag)
     )
-    run_once(output_dir, max_age_hours, fetch_products_flag)
+    run_once(output_dir, max_age_hours, fetch_products_flag, fetch_trending_flag)
 
     logger.info("Daemon running. Press Ctrl+C to stop.")
     try:
@@ -102,12 +112,17 @@ def main():
         action="store_true",
         help="Also fetch product announcements from official company sources",
     )
+    parser.add_argument(
+        "--trending",
+        action="store_true",
+        help="Also fetch trending GitHub repos, MCPs, and Claude Code skills",
+    )
     args = parser.parse_args()
 
     if args.daemon:
-        run_daemon(args.output_dir, args.fetch_time, args.max_age, args.products)
+        run_daemon(args.output_dir, args.fetch_time, args.max_age, args.products, args.trending)
     else:
-        path = run_once(args.output_dir, args.max_age, args.products)
+        path = run_once(args.output_dir, args.max_age, args.products, args.trending)
         if path:
             abs_path = os.path.abspath(path)
             print(f"\nDone! Open: file:///{abs_path}")

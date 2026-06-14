@@ -153,6 +153,39 @@ HTML = """<!DOCTYPE html>
   /* ── Tab content visibility ── */
   .tab-content {{ display: none; }}
   .tab-content.active {{ display: block; }}
+
+  /* ── Repo cards (trending / MCP / skills) ── */
+  .repo-grid {{
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }}
+  @media (max-width: 540px) {{
+    .repo-grid {{ grid-template-columns: 1fr; }}
+  }}
+  .repo-card {{
+    background: white; border-radius: 8px; padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid #e8e8e8;
+    display: flex; flex-direction: column;
+  }}
+  .repo-card .repo-name {{
+    font-size: 0.9rem; font-weight: 600; margin-bottom: 4px;
+  }}
+  .repo-card .repo-name a {{ color: #222; text-decoration: none; }}
+  .repo-card .repo-name a:hover {{ color: #6C5CE7; }}
+  .repo-card .repo-desc {{
+    font-size: 0.8rem; color: #666; line-height: 1.4; flex: 1;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }}
+  .repo-card .repo-meta {{
+    margin-top: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }}
+  .repo-card .repo-stars {{
+    font-size: 0.78rem; color: #333; font-weight: 500;
+  }}
+  .repo-card .repo-lang {{
+    font-size: 0.7rem; background: #f0f0f0; padding: 2px 8px;
+    border-radius: 3px; color: #555;
+  }}
 </style>
 </head>
 <body>
@@ -162,6 +195,8 @@ HTML = """<!DOCTYPE html>
   <div class="tab-bar">
     <button class="tab-btn active" onclick="switchTab('news')">News Digest</button>
     <button class="tab-btn" onclick="switchTab('products')">Product Tracker</button>
+    <button class="tab-btn" onclick="switchTab('trending')">GitHub Trending</button>
+    <button class="tab-btn" onclick="switchTab('mcp')">MCPs & Skills</button>
   </div>
 </div>
 
@@ -182,6 +217,22 @@ HTML = """<!DOCTYPE html>
     {prod_chinese_label}
     <div class="company-grid">{prod_chinese_cards}</div>
     {prod_empty}
+  </div>
+
+  <!-- ═══════ TRENDING TAB ═══════ -->
+  <div id="tab-trending" class="tab-content">
+    <div class="section-label">Trending AI Repositories on GitHub</div>
+    <div class="repo-grid">{trending_cards}</div>
+    {trending_empty}
+  </div>
+
+  <!-- ═══════ MCP & SKILLS TAB ═══════ -->
+  <div id="tab-mcp" class="tab-content">
+    <div class="section-label">Popular MCP Servers</div>
+    <div class="repo-grid">{mcp_cards}</div>
+    <div class="section-label">Claude Code Skills</div>
+    <div class="repo-grid">{skills_cards}</div>
+    {mcp_empty}
   </div>
 </div>
 
@@ -231,6 +282,15 @@ PRODUCT_CARD = """<div class="company-card">
 
 SECTION_LABEL = '<div class="section-label">{label}</div>'
 
+REPO_CARD = """<div class="repo-card">
+  <div class="repo-name"><a href="{url}" target="_blank" rel="noopener">{name}</a></div>
+  <div class="repo-desc">{desc}</div>
+  <div class="repo-meta">
+    <span class="repo-stars">&#9733; {stars}</span>
+    {lang_badge}
+  </div>
+</div>"""
+
 
 # ═══════════════════════════════════════════════════════════
 #  Rendering helpers
@@ -259,6 +319,24 @@ def _render_product(p):
         name=p.get("product_name", p.get("title", "")),
         link=p.get("link", "#"),
         desc=desc,
+    )
+
+
+def _render_repo_card(r):
+    """Render a single GitHub repo card."""
+    stars = r.get("stars", 0)
+    if stars >= 1000:
+        stars_str = f"{stars/1000:.1f}k"
+    else:
+        stars_str = str(stars)
+    lang = r.get("language", "")
+    lang_badge = f'<span class="repo-lang">{lang}</span>' if lang else ""
+    desc = r.get("description", "")
+    if len(desc) > 180:
+        desc = desc[:177] + "..."
+    return REPO_CARD.format(
+        name=r["name"], url=r["url"], stars=stars_str,
+        desc=desc, lang_badge=lang_badge,
     )
 
 
@@ -344,11 +422,30 @@ def _render_products_html(products):
 #  Main entry
 # ═══════════════════════════════════════════════════════════
 
-def generate_unified_page(articles, products, output_dir="output"):
+def generate_unified_page(articles, products, trending=None, output_dir="output"):
     os.makedirs(output_dir, exist_ok=True)
+
+    if trending is None:
+        trending = {}
 
     nwl, nwc, ncl, ncc, nother = _render_news_html(articles)
     pwl, pwc, pcl, pcc, pempty = _render_products_html(products)
+
+    # Render repo cards
+    trending_repos = trending.get("trending", [])
+    mcp_repos = trending.get("mcp", [])
+    skills_repos = trending.get("skills", [])
+
+    tcards = "\n".join(_render_repo_card(r) for r in trending_repos)
+    mcards = "\n".join(_render_repo_card(r) for r in mcp_repos)
+    scards = "\n".join(_render_repo_card(r) for r in skills_repos)
+
+    trending_empty = ""
+    if not trending_repos:
+        trending_empty = '<div class="empty-state">No trending repos found.</div>'
+    mcp_empty = ""
+    if not mcp_repos and not skills_repos:
+        mcp_empty = '<div class="empty-state">No MCP or skills found.</div>'
 
     date_str = datetime.now().strftime("%Y-%m-%d")
     today = datetime.now().strftime("%B %d, %Y")
@@ -367,6 +464,11 @@ def generate_unified_page(articles, products, output_dir="output"):
         prod_chinese_label=pcl,
         prod_chinese_cards=pcc,
         prod_empty=pempty,
+        trending_cards=tcards,
+        trending_empty=trending_empty,
+        mcp_cards=mcards,
+        skills_cards=scards,
+        mcp_empty=mcp_empty,
     )
 
     dated_path = os.path.join(output_dir, f"ai_dashboard_{date_str}.html")
